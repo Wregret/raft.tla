@@ -34,8 +34,8 @@ IsOrdinalOne(x) == /\ Min(x) = 1
 OneSequence == {x \in [Server -> 1..Cardinality(Server)] : IsOrdinalOne(x)}
 
 h(x) == IF 0 \in {x[i]: i \in Server}
-        THEN CHOOSE zs \in ZeroSequence: KeepOrder(x, zs)
-        ELSE CHOOSE os \in OneSequence: KeepOrder(x, os)
+            THEN x' = CHOOSE zs \in ZeroSequence: KeepOrder(x, zs)
+            ELSE x' = CHOOSE os \in OneSequence: KeepOrder(x, os)
         
 RST(x, i) == h([x EXCEPT ![i] = 0])
 
@@ -137,7 +137,7 @@ HandleRequestVoteResponse(i, j, m) == /\ m.mterm = currentTerm[i]
 \* Any RPC with a newer term causes the recipient to advance its term first.
 UpdateTerm(i, j, m) ==
     /\ m.mterm > currentTerm[i]
-    /\ currentTerm' = SET(currentTerm, i, m.sender) \*problem here
+    /\ SET(currentTerm, i, m.sender) \*problem here
     /\ status' = [status EXCEPT ![i] = Follower]
     /\ votedFor' = [votedFor EXCEPT ![i] = Nil]
        \* network is unchanged so m can be processed further.
@@ -165,7 +165,7 @@ Receive(m) == LET i == m.mreceiver
 \* Common Behavior *\
 Timeout(i) == /\ status[i] \in {Follower, Candidate}
               /\ status' = [status EXCEPT ![i] = Candidate]
-              /\ currentTerm' = INC(currentTerm, i, i)
+              /\ INC(currentTerm, i, i)
               /\ votedFor' = [votedFor EXCEPT ![i] = i]
               /\ voteGotten' = [voteGotten EXCEPT ![i] = 1]
               /\ voteResponded' = [voteResponded EXCEPT ![i] = {}]
@@ -258,7 +258,6 @@ BecomeLeader(i) == /\ voteGotten[i] * 2 > Cardinality(Server)
 \*              /\ UNCHANGED <<lastLogIndex, lastLogTerm, cluster>>
 
 
-
 ----
 Init == /\ currentTerm = [i \in Server |-> 0]
         /\ votedFor = [i \in Server |-> Nil]
@@ -285,5 +284,5 @@ SingleLeader == [] \/ Cardinality({i \in Server: status[i] = Leader}) = 1
 
 =============================================================================
 \* Modification History
-\* Last modified Sun Jul 12 20:32:05 EDT 2020 by wregret
+\* Last modified Mon Jul 13 11:11:44 EDT 2020 by wregret
 \* Created Sun Jul 05 11:45:52 EDT 2020 by wregret
