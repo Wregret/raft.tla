@@ -24,7 +24,7 @@ IsOrdinalZero(x) == /\ Min(x) = 0
                     /\ \A i \in Server: x[i] \in Min(x)..Max(x)
                     /\ \A n \in Min(x)..Max(x): \E i \in Server: x[i] = n
                     
-ZeroSequence == {x \in [Server -> Server]: IsOrdinalZero(x)}
+ZeroSequence == {x \in [Server -> 0..Cardinality(Server)]: IsOrdinalZero(x)}
 
 
 IsOrdinalOne(x) == /\ Min(x) = 1
@@ -34,8 +34,8 @@ IsOrdinalOne(x) == /\ Min(x) = 1
 OneSequence == {x \in [Server -> 1..Cardinality(Server)] : IsOrdinalOne(x)}
 
 h(x) == IF 0 \in {x[i]: i \in Server}
-            THEN x' = CHOOSE zs \in ZeroSequence: KeepOrder(x, zs)
-            ELSE x' = CHOOSE os \in OneSequence: KeepOrder(x, os)
+            THEN CHOOSE zs \in ZeroSequence: KeepOrder(x, zs)
+            ELSE CHOOSE os \in OneSequence: KeepOrder(x, os)
         
 RST(x, i) == h([x EXCEPT ![i] = 0])
 
@@ -47,9 +47,9 @@ INC1(x, i, j) == h([s \in Server |-> IF s = i THEN x[j] + 1
 
 INC2(x, i, j) == h([x EXCEPT ![i] = x[j] + 1])
 
-INC(x, i, j) == \/ /\ x[i] < Max(x)
-                   /\ INC1(x, i, j)
-                \/ INC2(x, i, j)
+INC(x, i, j) == IF x[i] < Max(x)
+                THEN CHOOSE inc \in {INC1(x, i, j), INC2(x, i, j)}: TRUE
+                ELSE INC2(x, i, j)
 
 ----
 \* Quorum *\
@@ -137,7 +137,7 @@ HandleRequestVoteResponse(i, j, m) == /\ m.mterm = currentTerm[i]
 \* Any RPC with a newer term causes the recipient to advance its term first.
 UpdateTerm(i, j, m) ==
     /\ m.mterm > currentTerm[i]
-    /\ SET(currentTerm, i, m.sender) \*problem here
+    /\ currentTerm' = SET(currentTerm, i, m.sender) \*problem here
     /\ status' = [status EXCEPT ![i] = Follower]
     /\ votedFor' = [votedFor EXCEPT ![i] = Nil]
        \* network is unchanged so m can be processed further.
@@ -165,7 +165,7 @@ Receive(m) == LET i == m.mreceiver
 \* Common Behavior *\
 Timeout(i) == /\ status[i] \in {Follower, Candidate}
               /\ status' = [status EXCEPT ![i] = Candidate]
-              /\ INC(currentTerm, i, i)
+              /\ currentTerm' = INC(currentTerm, i, i)
               /\ votedFor' = [votedFor EXCEPT ![i] = i]
               /\ voteGotten' = [voteGotten EXCEPT ![i] = 1]
               /\ voteResponded' = [voteResponded EXCEPT ![i] = {}]
@@ -175,88 +175,6 @@ BecomeLeader(i) == /\ voteGotten[i] * 2 > Cardinality(Server)
                    /\ status[i] = Candidate
                    /\ status' = [status EXCEPT ![i] = Leader]
                    /\ UNCHANGED <<votedFor, currentTerm, lastLogIndex, lastLogTerm, cluster, network, voteGotten, voteResponded>>
-
-\*ReplyRequestVote(i) == LET pending == {rpc \in network: (i \in rpc[receiver] /\ rpc[type] = RequestVoteRequest)}
-\*                       IN IF Cardinality(pending) > 0
-\*                          THEN LET rpc == CHOOSE p \in pending: TRUE
-\*                               IN /\ IF rpc[term] < currentTerm[i]
-\*                                     THEN /\ reply = {[sender |-> i,
-\*                                                       receiver |-> rpc.sender,
-\*                                                       type |-> RequestVoteReply,
-\*                                                       term |-> currentTerm[i],
-\*                                                       voteGranted |-> False]}
-\*                                          /\ UNCHANGED<<currentTerm, votedFor, status>>
-\*                                     ELSE /\ SET(currentTerm, i, rpc[sender]) \* problem here
-\*                                          /\ IF votedFor[i] = Nil
-\*                                             THEN /\ IF rpc[term] > currentTerm[i]
-\*                                                     THEN status' = [status EXCEPT ![i] = Follower]
-\*                                                     ELSE UNCHANGED<<status>>
-\*                                                  /\ IF rpc[LLT] > lastLogTerm[i]
-\*                                                     THEN /\ reply = {[sender |-> i,
-\*                                                                       receiver |-> rpc[sender],
-\*                                                                       type |-> RequestVoteReply,
-\*                                                                       term |-> rpc[term],
-\*                                                                       voteGranted |-> True]}
-\*                                                          /\ votedFor' = [votedFor EXCEPT ![i] = rpc[sender]]
-\*                                                     ELSE IF (rpc[LLT] = lastLogTerm[i] /\ rpc[LLI] >= lastLogIndex[i])
-\*                                                          THEN /\ reply = {[sender |-> i,
-\*                                                                      receiver |-> rpc[sender],
-\*                                                                      type |-> RequestVoteReply,
-\*                                                                      term |-> rpc[term],
-\*                                                                      voteGranted |-> True]}
-\*                                                               /\ votedFor' = [votedFor EXCEPT ![i] = rpc[sender]]
-\*                                                          ELSE /\ reply = {[sender |-> i,
-\*                                                                      receiver |-> rpc[sender],
-\*                                                                      type |-> RequestVoteReply,
-\*                                                                      term |-> rpc[term],
-\*                                                                      voteGranted |-> False]}
-\*                                                               /\ UNCHANGED<<votedFor>>
-\*                                              ELSE /\ reply = {[sender |-> i,
-\*                                                       receiver |-> rpc[sender],
-\*                                                       type |-> RequestVoteReply,
-\*                                                       term |-> currentTerm[i],
-\*                                                       voteGranted |-> False]}
-\*                                                   /\ UNCHANGED<<votedFor, status>>
-\*                                   /\ network' = (network \ rpc) \cup reply
-\*                                   /\ UNCHANGED<<lastLogIndex, lastLogTerm, cluster, voteGotten>>
-\*                           ELSE UNCHANGED<<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, network, voteGotten>>
-\*
-\*GatherVote(i) == LET pending == {rpc \in network: (i \in rpc[receiver] /\ rpc[type] = RequestVoteReply)}
-\*                 IN IF Cardinality(pending) > 0
-\*                    THEN LET rpc == CHOOSE p \in pending: TRUE
-\*                         IN /\ IF currentTerm[i] < rpc[term]
-\*                               THEN /\ SET(currentTerm, i, rpc[sender]) \* problem here.
-\*                                    /\ status' = [status EXCEPT ![i] = Follower]
-\*                                    /\ votedFor' = [votedFor EXCEPT ![i] = Nil]
-\*                                    /\ voteGotten' = [voteGotten EXCEPT ![i] = 0]
-\*                               ELSE /\ IF rpc[voteGranted] = True
-\*                                       THEN voteGotten' = [voteGotten EXCEPT ![i] = voteGotten[i] + 1]
-\*                                       ELSE UNCHANGED<<voteGotten>>
-\*                                    /\ UNCHANGED<<status, votedFor, currentTerm>>
-\*                            /\ network' = network \ {rpc}
-\*                    ELSE UNCHANGED<<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, network, voteGotten>>
-\*
-\*Disconnect(i) == /\ cluster' = cluster \ {i}
-\*                 /\ UNCHANGED <<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, network, voteGotten>>
-\*
-\*Reconnect(i) == /\ cluster' = cluster \union {i}
-\*                /\ UNCHANGED <<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, network, voteGotten>>
-\*
-\*Disconnect(i) == /\ cluster' = cluster \ {i}
-\*                 /\ UNCHANGED <<votedFor, currentTerm, lastLogIndex, lastLogTerm, status>>
-\*
-\*Reconnect(i) == /\ cluster' = cluster \union {i}
-\*                /\ UNCHANGED <<votedFor, currentTerm, lastLogIndex, lastLogTerm, status>>
-\*
-\*Timeout(i) == /\ IF status[i] = Follower
-\*                 THEN /\ status' = [status EXCEPT ![i] = Candidate]
-\*                      /\ currentTerm' = INC(currentTerm, i, i)
-\*                      /\ votedFor' = [votedFor EXCEPT ![i] = i]
-\*                      /\ voteGotten = [voteGotten EXCEPT ![i] = 1]
-\*                      /\ sendRequestVote(i)
-\*                 ELSE UNCHANGED <<status, currentTerm, votedFor, voteGotten>>
-\*              /\ UNCHANGED <<lastLogIndex, lastLogTerm, cluster>>
-
 
 ----
 Init == /\ currentTerm = [i \in Server |-> 0]
@@ -276,6 +194,8 @@ Next == \/ \E i \in Server: Timeout(i)
 \*        \/ \E m \in DOMAIN network : DuplicateMessage(m)
 \*        \/ \E m \in DOMAIN network : DropMessage(m)
 
+Spec == Init /\ [][Next]_<<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, network, voteGotten, voteResponded>>
+
 ----
 \* Properties *\
 LeaderElected == <> (\E i \in Server: status[i] = Leader)
@@ -284,5 +204,5 @@ SingleLeader == [] \/ Cardinality({i \in Server: status[i] = Leader}) = 1
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Jul 13 11:11:44 EDT 2020 by wregret
+\* Last modified Sat Jul 18 16:42:08 EDT 2020 by wregret
 \* Created Sun Jul 05 11:45:52 EDT 2020 by wregret
