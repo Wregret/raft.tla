@@ -64,7 +64,7 @@ Quorum == {i \in SUBSET(Server) : Cardinality(i) * 2 > Cardinality(Server)}
 \* new bag of messages with one more m in it.
 WithMessage(m, msgs) ==
     IF m \in DOMAIN msgs THEN
-        [msgs EXCEPT ![m] = msgs[m] + 1]
+        [msgs EXCEPT ![m] = 1]
     ELSE
         msgs @@ (m :> 1)
 
@@ -72,7 +72,7 @@ WithMessage(m, msgs) ==
 \* a new bag of messages with one less m in it.
 WithoutMessage(m, msgs) ==
     IF m \in DOMAIN msgs THEN
-        [msgs EXCEPT ![m] = msgs[m] - 1]
+        [msgs EXCEPT ![m] = 0]
     ELSE
         msgs
 
@@ -90,7 +90,7 @@ Reply(response, request) ==
 ----
 \* RPC: i -> j *\
 RequestVote(i, j) == /\ status[i] = Candidate
-                     /\ j \notin voteResponded[i]
+                     /\ j \in (Server \ voteResponded[i])
                      /\ Send([msender |-> i, 
                               mreceiver |-> j,
                               mtype |-> RequestVoteRequest,
@@ -119,6 +119,7 @@ HandleRequestVoteRequest(i, j, m) == LET logOK == \/ m.mlastLogTerm > lastLogTer
                                                   mvoteGranted |-> grant,
                                                   msender |-> i,
                                                   mreceiver |-> j],m)
+                                        /\ UNCHANGED<<lastLogIndex, lastLogTerm, cluster, currentTerm, status, voteGotten, voteResponded>>
 
 
 \* Server i receives a RequestVote response from server j with
@@ -137,7 +138,7 @@ HandleRequestVoteResponse(i, j, m) == /\ m.mterm = currentTerm[i]
 \* Any RPC with a newer term causes the recipient to advance its term first.
 UpdateTerm(i, j, m) ==
     /\ m.mterm > currentTerm[i]
-    /\ currentTerm' = SET(currentTerm, i, m.sender) \*problem here
+    /\ currentTerm' = SET(currentTerm, i, m.msender) \*problem here
     /\ status' = [status EXCEPT ![i] = Follower]
     /\ votedFor' = [votedFor EXCEPT ![i] = Nil]
        \* network is unchanged so m can be processed further.
@@ -168,7 +169,7 @@ Timeout(i) == /\ status[i] \in {Follower, Candidate}
               /\ currentTerm' = INC(currentTerm, i, i)
               /\ votedFor' = [votedFor EXCEPT ![i] = i]
               /\ voteGotten' = [voteGotten EXCEPT ![i] = 1]
-              /\ voteResponded' = [voteResponded EXCEPT ![i] = {}]
+              /\ voteResponded' = [voteResponded EXCEPT ![i] = {i}]
               /\ UNCHANGED <<lastLogIndex, lastLogTerm, cluster, network>>
 
 BecomeLeader(i) == /\ voteGotten[i] * 2 > Cardinality(Server)
@@ -194,7 +195,7 @@ Next == \/ \E i \in Server: Timeout(i)
 \*        \/ \E m \in DOMAIN network : DuplicateMessage(m)
 \*        \/ \E m \in DOMAIN network : DropMessage(m)
 
-Spec == Init /\ [][Next]_<<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, network, voteGotten, voteResponded>>
+\*Spec == Init /\ [][Next]_<<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, network, voteGotten, voteResponded>>
 
 ----
 \* Properties *\
@@ -204,5 +205,5 @@ SingleLeader == [] \/ Cardinality({i \in Server: status[i] = Leader}) = 1
 
 =============================================================================
 \* Modification History
-\* Last modified Sat Jul 18 16:42:08 EDT 2020 by wregret
+\* Last modified Sat Jul 18 19:31:41 EDT 2020 by wregret
 \* Created Sun Jul 05 11:45:52 EDT 2020 by wregret
