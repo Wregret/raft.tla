@@ -505,11 +505,7 @@ BothLeader( i, j ) ==
 
 MoreThanOneLeader ==
     \E i, j \in Server :  BothLeader( i, j ) 
-    
-    
-\* Modified by Wei
-FinallyOneLeader == <>(\E i \in Server: state[i]=Leader)
-NoLeader == [](\A i \in Server: state[i]/=Leader)
+
 
 
 

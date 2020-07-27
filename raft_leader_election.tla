@@ -108,7 +108,7 @@ RequestVote(i, j) == /\ status[i] = Candidate
 HandleRequestVoteRequest(i, j, m) == LET logOK == \/ m.mlastLogTerm > lastLogTerm[i] \*problem here
                                                   \/ /\ m.mlastLogTerm = lastLogTerm[i]
                                                      /\ m.mlastLogIndex >= lastLogIndex[i]
-                                         grant == /\ m.mterm = currentTerm[i] \*problem here
+                                         grant == /\ m.mterm = currentTerm[i] \* unreal
                                                   /\ logOK
                                                   /\ votedFor[i] = Nil
                                      IN /\ m.mterm <= currentTerm[i]
@@ -138,7 +138,7 @@ HandleRequestVoteResponse(i, j, m) == /\ m.mterm = currentTerm[i]
 \* Any RPC with a newer term causes the recipient to advance its term first.
 UpdateTerm(i, j, m) ==
     /\ m.mterm > currentTerm[i]
-    /\ currentTerm' = SET(currentTerm, i, m.msender) \*problem here
+    /\ currentTerm' = SET(currentTerm, i, m.msender) \* unreal
     /\ status' = [status EXCEPT ![i] = Follower]
     /\ votedFor' = [votedFor EXCEPT ![i] = Nil]
        \* network is unchanged so m can be processed further.
@@ -164,7 +164,8 @@ Receive(m) == LET i == m.mreceiver
 
 ----
 \* Common Behavior *\
-Timeout(i) == /\ status[i] \in {Follower, Candidate}
+Timeout(i) == \* /\ {message \in DOMAIN network: message.mreceiver = i} = {} \* unreal
+              /\ status[i] \in {Follower, Candidate} \* unreal
               /\ status' = [status EXCEPT ![i] = Candidate]
               /\ currentTerm' = INC(currentTerm, i, i)
               /\ votedFor' = [votedFor EXCEPT ![i] = i]
@@ -199,11 +200,26 @@ Next == \/ \E i \in Server: Timeout(i)
 
 ----
 \* Properties *\
+
+\*IsNotLeader(i) == IF status[i] = Leader
+\*                  THEN FALSE
+\*                  ELSE TRUE
+\*LeaderNotElected == <> (\A i \in Server: IsNotLeader(i))
 LeaderElected == <> (\E i \in Server: status[i] = Leader)
-SingleLeader == [] \/ Cardinality({i \in Server: status[i] = Leader}) = 1
-                   \/ Cardinality({i \in Server: status[i] = Leader}) = 0
+\*SingleLeader == [] \/ Cardinality({i \in Server: status[i] = Leader}) = 1
+\*                   \/ Cardinality({i \in Server: status[i] = Leader}) = 0
+
+\* The following are a set of verification by jinlmsft@hotmail.com
+BothLeader( i, j ) == 
+    /\ i /= j
+    /\ currentTerm[i] = currentTerm[j]
+    /\ status[i] = Leader
+    /\ status[j] = Leader
+
+NoMoreThanOneLeader ==
+    \E i, j \in Server :  ~BothLeader( i, j ) 
 
 =============================================================================
 \* Modification History
-\* Last modified Sat Jul 18 19:31:41 EDT 2020 by wregret
+\* Last modified Mon Jul 27 11:55:59 EDT 2020 by wregret
 \* Created Sun Jul 05 11:45:52 EDT 2020 by wregret
