@@ -10,6 +10,8 @@ CONSTANT RequestVoteRequest, RequestVoteResponse
 VARIABLES votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, network, voteGotten, voteResponded
 \*VARIABLES votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, voteGotten
 
+\*VARIABLE counter
+
 ----
 \* Finitification *\
 Min(s) == CHOOSE x \in {s[i]: i \in Server} : \A y \in {s[i]: i \in Server} : x <= y
@@ -108,10 +110,10 @@ RequestVote(i, j) == /\ status[i] = Candidate
 HandleRequestVoteRequest(i, j, m) == LET logOK == \/ m.mlastLogTerm > lastLogTerm[i] \*problem here
                                                   \/ /\ m.mlastLogTerm = lastLogTerm[i]
                                                      /\ m.mlastLogIndex >= lastLogIndex[i]
-                                         grant == /\ m.mterm = currentTerm[i] \* unreal
+                                         grant == /\ currentTerm[j] >= currentTerm[i] \* unreal
                                                   /\ logOK
                                                   /\ votedFor[i] = Nil
-                                     IN /\ m.mterm <= currentTerm[i]
+                                     IN \* /\ m.mterm <= currentTerm[i]
                                         /\ \/ grant /\ votedFor' = [votedFor EXCEPT ![i] = j]
                                            \/ ~grant /\ UNCHANGED votedFor
                                         /\ Reply([mtype |-> RequestVoteResponse,
@@ -146,25 +148,29 @@ UpdateTerm(i, j, m) ==
 
 \* Responses with stale terms are ignored.
 DropStaleResponse(i, j, m) ==
-    /\ m.mterm < currentTerm[i]
+\*    /\ (m.mterm < currentTerm[i] \/ m.mterm > currentTerm[m.msender])
+    /\ m.mterm > currentTerm[m.msender]
     /\ Discard(m)
     /\ UNCHANGED <<votedFor, currentTerm, lastLogIndex, lastLogTerm, status, cluster, voteGotten, voteResponded>>
     
 \* Receive a message.
-Receive(m) == LET i == m.mreceiver
-                  j == m.msender
-              IN \* Any RPC with a newer term causes the recipient to advance
-                 \* its term first. Responses with stale terms are ignored.
-                 \/ UpdateTerm(i, j, m)
-                 \/ /\ m.mtype = RequestVoteRequest
-                    /\ HandleRequestVoteRequest(i, j, m)
-                 \/ /\ m.mtype = RequestVoteResponse
-                    /\ \/ DropStaleResponse(i, j, m)
-                       \/ HandleRequestVoteResponse(i, j, m)
+Receive(m) == /\ network[m] = 1
+              /\ LET i == m.mreceiver
+                     j == m.msender
+                 IN \* Any RPC with a newer term causes the recipient to advance
+                    \* its term first. Responses with stale terms are ignored.
+                    \/ UpdateTerm(i, j, m)
+                    \/ /\ m.mtype = RequestVoteRequest
+                       /\ \/ DropStaleResponse(i, j, m)
+                          \/ HandleRequestVoteRequest(i, j, m)
+                    \/ /\ m.mtype = RequestVoteResponse
+                       /\ \/ DropStaleResponse(i, j, m)
+                          \/ HandleRequestVoteResponse(i, j, m)
 
 ----
 \* Common Behavior *\
 Timeout(i) == \* /\ {message \in DOMAIN network: message.mreceiver = i} = {} \* unreal
+\*              /\ ~(\E s \in Server: status[s] \in {Leader})
               /\ status[i] \in {Follower, Candidate} \* unreal
               /\ status' = [status EXCEPT ![i] = Candidate]
               /\ currentTerm' = INC(currentTerm, i, i)
@@ -188,6 +194,16 @@ Init == /\ currentTerm = [i \in Server |-> 0]
         /\ network = [m \in {} |-> 0]
         /\ voteGotten = [i \in Server |-> 0]
         /\ voteResponded = [i \in Server |-> {}]
+\*        /\ counter = 0
+        
+\*Next == /\ counter < 10
+\*        /\ counter' = counter + 1
+\*        /\ \/ \E i \in Server: Timeout(i)
+\*           \/ \E i,j \in Server: RequestVote(i,j)
+\*           \/ \E i \in Server : BecomeLeader(i)
+\*           \/ \E m \in DOMAIN network : Receive(m)
+\*        \/ \E m \in DOMAIN network : DuplicateMessage(m)
+\*        \/ \E m \in DOMAIN network : DropMessage(m)
 
 Next == \/ \E i \in Server: Timeout(i)
         \/ \E i,j \in Server: RequestVote(i,j)
@@ -201,10 +217,10 @@ Next == \/ \E i \in Server: Timeout(i)
 ----
 \* Properties *\
 
-\*IsNotLeader(i) == IF status[i] = Leader
-\*                  THEN FALSE
-\*                  ELSE TRUE
-\*LeaderNotElected == <> (\A i \in Server: IsNotLeader(i))
+IsNotLeader(i) == IF status[i] = Leader
+                  THEN FALSE
+                  ELSE TRUE
+LeaderNotElected == [] (\A i \in Server: IsNotLeader(i))
 LeaderElected == <> (\E i \in Server: status[i] = Leader)
 \*SingleLeader == [] \/ Cardinality({i \in Server: status[i] = Leader}) = 1
 \*                   \/ Cardinality({i \in Server: status[i] = Leader}) = 0
@@ -221,5 +237,5 @@ NoMoreThanOneLeader ==
 
 =============================================================================
 \* Modification History
-\* Last modified Mon Jul 27 11:55:59 EDT 2020 by wregret
+\* Last modified Fri Aug 21 11:08:49 EDT 2020 by wregret
 \* Created Sun Jul 05 11:45:52 EDT 2020 by wregret
